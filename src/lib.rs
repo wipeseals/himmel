@@ -43,21 +43,23 @@ pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
 }
 
 fn extract_elf_info(elf: &Elf) -> ElfInfo {
+    use goblin::elf::header::*;
+    
     let architecture = match elf.header.e_machine {
-        goblin::elf::header::EM_X86_64 => "x86_64",
-        goblin::elf::header::EM_386 => "i386",
-        goblin::elf::header::EM_AARCH64 => "aarch64",
-        goblin::elf::header::EM_ARM => "arm",
-        goblin::elf::header::EM_RISCV => "riscv",
+        EM_X86_64 => "x86_64",
+        EM_386 => "i386",
+        EM_AARCH64 => "aarch64",
+        EM_ARM => "arm",
+        EM_RISCV => "riscv",
         _ => "unknown",
     }
     .to_string();
 
     let file_type = match elf.header.e_type {
-        goblin::elf::header::ET_EXEC => "executable",
-        goblin::elf::header::ET_DYN => "shared_object",
-        goblin::elf::header::ET_REL => "relocatable",
-        goblin::elf::header::ET_CORE => "core_dump",
+        ET_EXEC => "executable",
+        ET_DYN => "shared_object",
+        ET_REL => "relocatable",
+        ET_CORE => "core_dump",
         _ => "unknown",
     }
     .to_string();
@@ -90,12 +92,14 @@ fn extract_elf_info(elf: &Elf) -> ElfInfo {
 
 /// Parse a coredump file and extract thread and register information
 pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
+    use goblin::elf::header::ET_CORE;
+    
     let buffer = fs::read(file_path)
         .with_context(|| format!("Failed to read coredump file: {}", file_path))?;
 
     match Object::parse(&buffer)? {
         Object::Elf(elf) => {
-            if elf.header.e_type != goblin::elf::header::ET_CORE {
+            if elf.header.e_type != ET_CORE {
                 anyhow::bail!("File is not a coredump (ET_CORE)");
             }
             extract_coredump_info(&elf, &buffer)
@@ -105,12 +109,14 @@ pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
 }
 
 fn extract_coredump_info(elf: &Elf, buffer: &[u8]) -> Result<CoredumpInfo> {
+    use goblin::elf::header::*;
+    
     let architecture = match elf.header.e_machine {
-        goblin::elf::header::EM_X86_64 => "x86_64",
-        goblin::elf::header::EM_386 => "i386",
-        goblin::elf::header::EM_AARCH64 => "aarch64",
-        goblin::elf::header::EM_ARM => "arm",
-        goblin::elf::header::EM_RISCV => "riscv",
+        EM_X86_64 => "x86_64",
+        EM_386 => "i386",
+        EM_AARCH64 => "aarch64",
+        EM_ARM => "arm",
+        EM_RISCV => "riscv",
         _ => "unknown",
     }
     .to_string();
