@@ -38,10 +38,10 @@ fn main() -> Result<()> {
     match analyze_files(args.elf.as_deref(), args.core.as_deref()) {
         Ok(result) => {
             let json_output = to_json(&result)?;
-            println!("{}", json_output);
+            println!("{json_output}");
         }
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
     }
