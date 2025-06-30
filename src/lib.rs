@@ -44,7 +44,7 @@ pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
 
 fn extract_elf_info(elf: &Elf) -> ElfInfo {
     use goblin::elf::header::*;
-    
+
     let architecture = match elf.header.e_machine {
         EM_X86_64 => "x86_64",
         EM_386 => "i386",
@@ -93,7 +93,7 @@ fn extract_elf_info(elf: &Elf) -> ElfInfo {
 /// Parse a coredump file and extract thread and register information
 pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
     use goblin::elf::header::ET_CORE;
-    
+
     let buffer = fs::read(file_path)
         .with_context(|| format!("Failed to read coredump file: {}", file_path))?;
 
@@ -110,7 +110,7 @@ pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
 
 fn extract_coredump_info(elf: &Elf, buffer: &[u8]) -> Result<CoredumpInfo> {
     use goblin::elf::header::*;
-    
+
     let architecture = match elf.header.e_machine {
         EM_X86_64 => "x86_64",
         EM_386 => "i386",
