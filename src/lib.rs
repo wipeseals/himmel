@@ -34,7 +34,7 @@ pub struct AnalysisResult {
 /// Parse an ELF file and extract basic information
 pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
     let buffer = fs::read(file_path)
-        .with_context(|| format!("Failed to read ELF file: {}", file_path))?;
+        .with_context(|| format!("Failed to read ELF file: {file_path}"))?;
 
     match Object::parse(&buffer)? {
         Object::Elf(elf) => Ok(extract_elf_info(&elf)),
@@ -89,7 +89,7 @@ fn extract_elf_info(elf: &Elf) -> ElfInfo {
 /// Parse a coredump file and extract thread and register information
 pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
     let buffer = fs::read(file_path)
-        .with_context(|| format!("Failed to read coredump file: {}", file_path))?;
+        .with_context(|| format!("Failed to read coredump file: {file_path}"))?;
 
     match Object::parse(&buffer)? {
         Object::Elf(elf) => {
@@ -126,7 +126,7 @@ fn extract_coredump_info(elf: &Elf, buffer: &[u8]) -> Result<CoredumpInfo> {
                 
                 // For minimum viable implementation, we'll extract raw register data
                 // In a real implementation, this would parse NT_PRSTATUS notes properly
-                if note_data.len() > 0 {
+                if !note_data.is_empty() {
                     threads.push(ThreadInfo {
                         thread_id: thread_counter,
                         registers: note_data.to_vec(),
