@@ -94,6 +94,44 @@ println!("{}", json_output);
 - `clap`: CLI argument parsing  
 - `anyhow`: Error handling
 
+## Development
+
+### Testing
+
+The project includes comprehensive unit tests covering:
+- ELF file analysis with various architectures and file types
+- Coredump parsing and thread information extraction
+- Error handling for invalid files and missing files
+- JSON serialization and data structure validation
+- Integration testing with temporary test files
+
+Run tests with:
+```bash
+cargo test
+```
+
+### Linting and Formatting
+
+The project uses standard Rust tooling for code quality:
+```bash
+# Check formatting
+cargo fmt --check
+
+# Run linter
+cargo clippy --all-targets --all-features
+
+# Apply formatting
+cargo fmt
+```
+
+### Continuous Integration
+
+GitHub Actions CI automatically runs on all pull requests and pushes to main/master:
+- Code formatting checks
+- Clippy linting with zero warnings policy
+- Full test suite execution
+- Debug and release build verification
+
 ## Next Steps (Future Work)
 
 - Add DWARF parsing (backtraces, variable extraction) using gimli
