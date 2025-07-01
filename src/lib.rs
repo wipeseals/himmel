@@ -4,6 +4,22 @@ use goblin::Object;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+// WebAssembly support
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+#[cfg(target_arch = "wasm32")]
+macro_rules! console_log {
+    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ElfInfo {
     pub architecture: String,
@@ -37,6 +53,14 @@ pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
         fs::read(file_path).with_context(|| format!("Failed to read ELF file: {file_path}"))?;
 
     match Object::parse(&buffer)? {
+        Object::Elf(elf) => Ok(extract_elf_info(&elf)),
+        _ => anyhow::bail!("File is not a valid ELF binary"),
+    }
+}
+
+/// Parse an ELF file from byte buffer and extract basic information (WebAssembly-compatible)
+pub fn analyze_elf_from_bytes(buffer: &[u8]) -> Result<ElfInfo> {
+    match Object::parse(buffer)? {
         Object::Elf(elf) => Ok(extract_elf_info(&elf)),
         _ => anyhow::bail!("File is not a valid ELF binary"),
     }
@@ -103,6 +127,21 @@ pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
                 anyhow::bail!("File is not a coredump (ET_CORE)");
             }
             extract_coredump_info(&elf, &buffer)
+        }
+        _ => anyhow::bail!("File is not a valid ELF coredump"),
+    }
+}
+
+/// Parse a coredump file from byte buffer and extract thread and register information (WebAssembly-compatible)
+pub fn analyze_coredump_from_bytes(buffer: &[u8]) -> Result<CoredumpInfo> {
+    use goblin::elf::header::ET_CORE;
+
+    match Object::parse(buffer)? {
+        Object::Elf(elf) => {
+            if elf.header.e_type != ET_CORE {
+                anyhow::bail!("File is not a coredump (ET_CORE)");
+            }
+            extract_coredump_info(&elf, buffer)
         }
         _ => anyhow::bail!("File is not a valid ELF coredump"),
     }
@@ -180,9 +219,78 @@ pub fn analyze_files(elf_path: Option<&str>, core_path: Option<&str>) -> Result<
     })
 }
 
+/// Analyze both ELF and coredump files from byte buffers (WebAssembly-compatible)
+pub fn analyze_files_from_bytes(
+    elf_data: Option<&[u8]>,
+    core_data: Option<&[u8]>,
+) -> Result<AnalysisResult> {
+    let elf_info = if let Some(data) = elf_data {
+        Some(analyze_elf_from_bytes(data)?)
+    } else {
+        None
+    };
+
+    let coredump_info = if let Some(data) = core_data {
+        Some(analyze_coredump_from_bytes(data)?)
+    } else {
+        None
+    };
+
+    Ok(AnalysisResult {
+        elf_info,
+        coredump_info,
+    })
+}
+
 /// Convert analysis result to prettified JSON
 pub fn to_json(result: &AnalysisResult) -> Result<String> {
     serde_json::to_string_pretty(result).context("Failed to serialize result to JSON")
+}
+
+// WebAssembly bindings
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub fn main() {
+    console_error_panic_hook::set_once();
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_elf_wasm(data: &[u8]) -> String {
+    match analyze_elf_from_bytes(data) {
+        Ok(result) => match serde_json::to_string_pretty(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_coredump_wasm(data: &[u8]) -> String {
+    match analyze_coredump_from_bytes(data) {
+        Ok(result) => match serde_json::to_string_pretty(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_files_wasm(elf_data: Option<Box<[u8]>>, core_data: Option<Box<[u8]>>) -> String {
+    let elf_slice = elf_data.as_deref();
+    let core_slice = core_data.as_deref();
+
+    match analyze_files_from_bytes(elf_slice, core_slice) {
+        Ok(result) => match to_json(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
 }
 
 #[cfg(test)]
@@ -591,5 +699,93 @@ mod tests {
         assert_eq!(elf.sections.len(), 2);
         assert_eq!(elf.file_type, "shared_object");
         assert_eq!(elf.endianness, "big_endian");
+    }
+
+    #[test]
+    fn test_analyze_elf_from_bytes_success() {
+        let temp_file = create_test_elf_file();
+        let buffer = std::fs::read(temp_file.path()).unwrap();
+
+        let result = analyze_elf_from_bytes(&buffer).unwrap();
+
+        assert_eq!(result.architecture, "x86_64");
+        assert_eq!(result.entry_point, 0x401000);
+        assert_eq!(result.file_type, "executable");
+        assert_eq!(result.endianness, "little_endian");
+        assert!(result.sections.is_empty()); // No sections in minimal ELF
+    }
+
+    #[test]
+    fn test_analyze_elf_from_bytes_invalid() {
+        let invalid_data = vec![0x00, 0x01, 0x02, 0x03]; // Not a valid ELF file
+        let result = analyze_elf_from_bytes(&invalid_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_coredump_from_bytes_success() {
+        let temp_file = create_test_coredump_file();
+        let buffer = std::fs::read(temp_file.path()).unwrap();
+
+        let result = analyze_coredump_from_bytes(&buffer).unwrap();
+
+        assert_eq!(result.architecture, "x86_64");
+        assert!(!result.threads.is_empty());
+    }
+
+    #[test]
+    fn test_analyze_coredump_from_bytes_invalid() {
+        let invalid_data = vec![0x00, 0x01, 0x02, 0x03]; // Not a valid coredump file
+        let result = analyze_coredump_from_bytes(&invalid_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_both() {
+        let elf_file = create_test_elf_file();
+        let core_file = create_test_coredump_file();
+        let elf_buffer = std::fs::read(elf_file.path()).unwrap();
+        let core_buffer = std::fs::read(core_file.path()).unwrap();
+
+        let result = analyze_files_from_bytes(Some(&elf_buffer), Some(&core_buffer)).unwrap();
+
+        assert!(result.elf_info.is_some());
+        assert!(result.coredump_info.is_some());
+
+        let elf_info = result.elf_info.unwrap();
+        assert_eq!(elf_info.architecture, "x86_64");
+
+        let coredump_info = result.coredump_info.unwrap();
+        assert_eq!(coredump_info.architecture, "x86_64");
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_elf_only() {
+        let elf_file = create_test_elf_file();
+        let elf_buffer = std::fs::read(elf_file.path()).unwrap();
+
+        let result = analyze_files_from_bytes(Some(&elf_buffer), None).unwrap();
+
+        assert!(result.elf_info.is_some());
+        assert!(result.coredump_info.is_none());
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_core_only() {
+        let core_file = create_test_coredump_file();
+        let core_buffer = std::fs::read(core_file.path()).unwrap();
+
+        let result = analyze_files_from_bytes(None, Some(&core_buffer)).unwrap();
+
+        assert!(result.elf_info.is_none());
+        assert!(result.coredump_info.is_some());
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_none() {
+        let result = analyze_files_from_bytes(None, None).unwrap();
+
+        assert!(result.elf_info.is_none());
+        assert!(result.coredump_info.is_none());
     }
 }

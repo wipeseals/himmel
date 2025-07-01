@@ -6,6 +6,8 @@ Rust CLI tool for analyzing ELF and coredump files (DWARF info), WebAssembly-rea
 
 This tool analyzes ELF binaries and Linux coredump files, extracting basic ELF information and thread/register info from coredumps. The logic is structured in a library crate (`lib.rs`) so that future WebAssembly bindings can be easily added. CLI is implemented in `src/main.rs`. No external dependencies (like gdb) are required; this uses goblin for ELF parsing and serde for output.
 
+**🌐 [Try the Web Interface](https://wipeseals.github.io/himmel/)** - Analyze files directly in your browser using WebAssembly!
+
 ## Features
 
 - **Parse ELF file**: show architecture, entry point, section names, file type, endianness
