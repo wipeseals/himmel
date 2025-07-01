@@ -697,4 +697,92 @@ mod tests {
         assert_eq!(elf.file_type, "shared_object");
         assert_eq!(elf.endianness, "big_endian");
     }
+
+    #[test]
+    fn test_analyze_elf_from_bytes_success() {
+        let temp_file = create_test_elf_file();
+        let buffer = std::fs::read(temp_file.path()).unwrap();
+
+        let result = analyze_elf_from_bytes(&buffer).unwrap();
+
+        assert_eq!(result.architecture, "x86_64");
+        assert_eq!(result.entry_point, 0x401000);
+        assert_eq!(result.file_type, "executable");
+        assert_eq!(result.endianness, "little_endian");
+        assert!(result.sections.is_empty()); // No sections in minimal ELF
+    }
+
+    #[test]
+    fn test_analyze_elf_from_bytes_invalid() {
+        let invalid_data = vec![0x00, 0x01, 0x02, 0x03]; // Not a valid ELF file
+        let result = analyze_elf_from_bytes(&invalid_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_coredump_from_bytes_success() {
+        let temp_file = create_test_coredump_file();
+        let buffer = std::fs::read(temp_file.path()).unwrap();
+
+        let result = analyze_coredump_from_bytes(&buffer).unwrap();
+
+        assert_eq!(result.architecture, "x86_64");
+        assert!(!result.threads.is_empty());
+    }
+
+    #[test]
+    fn test_analyze_coredump_from_bytes_invalid() {
+        let invalid_data = vec![0x00, 0x01, 0x02, 0x03]; // Not a valid coredump file
+        let result = analyze_coredump_from_bytes(&invalid_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_both() {
+        let elf_file = create_test_elf_file();
+        let core_file = create_test_coredump_file();
+        let elf_buffer = std::fs::read(elf_file.path()).unwrap();
+        let core_buffer = std::fs::read(core_file.path()).unwrap();
+
+        let result = analyze_files_from_bytes(Some(&elf_buffer), Some(&core_buffer)).unwrap();
+
+        assert!(result.elf_info.is_some());
+        assert!(result.coredump_info.is_some());
+
+        let elf_info = result.elf_info.unwrap();
+        assert_eq!(elf_info.architecture, "x86_64");
+
+        let coredump_info = result.coredump_info.unwrap();
+        assert_eq!(coredump_info.architecture, "x86_64");
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_elf_only() {
+        let elf_file = create_test_elf_file();
+        let elf_buffer = std::fs::read(elf_file.path()).unwrap();
+
+        let result = analyze_files_from_bytes(Some(&elf_buffer), None).unwrap();
+
+        assert!(result.elf_info.is_some());
+        assert!(result.coredump_info.is_none());
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_core_only() {
+        let core_file = create_test_coredump_file();
+        let core_buffer = std::fs::read(core_file.path()).unwrap();
+
+        let result = analyze_files_from_bytes(None, Some(&core_buffer)).unwrap();
+
+        assert!(result.elf_info.is_none());
+        assert!(result.coredump_info.is_some());
+    }
+
+    #[test]
+    fn test_analyze_files_from_bytes_none() {
+        let result = analyze_files_from_bytes(None, None).unwrap();
+
+        assert!(result.elf_info.is_none());
+        assert!(result.coredump_info.is_none());
+    }
 }
