@@ -795,7 +795,7 @@ mod tests {
         let demo_paths = [
             ("demo-binaries/bin/x86_64/hello", "x86_64"),
             ("demo-binaries/bin/aarch64/hello", "aarch64"),
-            ("demo-binaries/bin/riscv64/hello", "riscv"),  // Note: goblin reports this as "riscv"
+            ("demo-binaries/bin/riscv64/hello", "riscv"), // Note: goblin reports this as "riscv"
             ("demo-binaries/bin/x86_64/fibonacci", "x86_64"),
             ("demo-binaries/bin/x86_64/counter", "x86_64"),
         ];
@@ -813,7 +813,7 @@ mod tests {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_analyze_demo_binaries_from_bytes() {
         // Test analysis of demo binaries from byte data
         let demo_paths = [
@@ -830,7 +830,7 @@ mod tests {
                 assert!(["executable", "shared_object"].contains(&result.file_type.as_str()));
                 assert_eq!(result.endianness, "little_endian");
                 assert!(result.entry_point > 0);
-                
+
                 // Architecture should be valid
                 assert!(["x86_64", "aarch64", "riscv"].contains(&result.architecture.as_str()));
             }
