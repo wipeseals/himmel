@@ -4,6 +4,22 @@ use goblin::Object;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+// WebAssembly support
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+#[cfg(target_arch = "wasm32")]
+macro_rules! console_log {
+    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ElfInfo {
     pub architecture: String,
@@ -37,6 +53,14 @@ pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
         fs::read(file_path).with_context(|| format!("Failed to read ELF file: {file_path}"))?;
 
     match Object::parse(&buffer)? {
+        Object::Elf(elf) => Ok(extract_elf_info(&elf)),
+        _ => anyhow::bail!("File is not a valid ELF binary"),
+    }
+}
+
+/// Parse an ELF file from byte buffer and extract basic information (WebAssembly-compatible)
+pub fn analyze_elf_from_bytes(buffer: &[u8]) -> Result<ElfInfo> {
+    match Object::parse(buffer)? {
         Object::Elf(elf) => Ok(extract_elf_info(&elf)),
         _ => anyhow::bail!("File is not a valid ELF binary"),
     }
@@ -103,6 +127,21 @@ pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
                 anyhow::bail!("File is not a coredump (ET_CORE)");
             }
             extract_coredump_info(&elf, &buffer)
+        }
+        _ => anyhow::bail!("File is not a valid ELF coredump"),
+    }
+}
+
+/// Parse a coredump file from byte buffer and extract thread and register information (WebAssembly-compatible)
+pub fn analyze_coredump_from_bytes(buffer: &[u8]) -> Result<CoredumpInfo> {
+    use goblin::elf::header::ET_CORE;
+
+    match Object::parse(buffer)? {
+        Object::Elf(elf) => {
+            if elf.header.e_type != ET_CORE {
+                anyhow::bail!("File is not a coredump (ET_CORE)");
+            }
+            extract_coredump_info(&elf, buffer)
         }
         _ => anyhow::bail!("File is not a valid ELF coredump"),
     }
@@ -180,9 +219,75 @@ pub fn analyze_files(elf_path: Option<&str>, core_path: Option<&str>) -> Result<
     })
 }
 
+/// Analyze both ELF and coredump files from byte buffers (WebAssembly-compatible)
+pub fn analyze_files_from_bytes(elf_data: Option<&[u8]>, core_data: Option<&[u8]>) -> Result<AnalysisResult> {
+    let elf_info = if let Some(data) = elf_data {
+        Some(analyze_elf_from_bytes(data)?)
+    } else {
+        None
+    };
+
+    let coredump_info = if let Some(data) = core_data {
+        Some(analyze_coredump_from_bytes(data)?)
+    } else {
+        None
+    };
+
+    Ok(AnalysisResult {
+        elf_info,
+        coredump_info,
+    })
+}
+
 /// Convert analysis result to prettified JSON
 pub fn to_json(result: &AnalysisResult) -> Result<String> {
     serde_json::to_string_pretty(result).context("Failed to serialize result to JSON")
+}
+
+// WebAssembly bindings
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub fn main() {
+    console_error_panic_hook::set_once();
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_elf_wasm(data: &[u8]) -> String {
+    match analyze_elf_from_bytes(data) {
+        Ok(result) => match serde_json::to_string_pretty(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_coredump_wasm(data: &[u8]) -> String {
+    match analyze_coredump_from_bytes(data) {
+        Ok(result) => match serde_json::to_string_pretty(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_files_wasm(elf_data: Option<Box<[u8]>>, core_data: Option<Box<[u8]>>) -> String {
+    let elf_slice = elf_data.as_deref();
+    let core_slice = core_data.as_deref();
+    
+    match analyze_files_from_bytes(elf_slice, core_slice) {
+        Ok(result) => match to_json(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
 }
 
 #[cfg(test)]
