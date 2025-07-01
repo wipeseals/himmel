@@ -15,6 +15,8 @@ This tool analyzes ELF binaries and Linux coredump files, extracting basic ELF i
 - **Output results as prettified JSON** (for easy piping or future Web UI integration)
 - **Structure is future-proof** for DWARF parsing (gimli crate can be added next)
 - **No external dependencies** - uses goblin for ELF parsing, serde for JSON output
+- **Demo binaries**: Pre-compiled sample programs for testing (C, Rust) in multiple architectures (x86_64, aarch64, riscv64)
+- **Web interface**: Select from demo binaries or upload your own files for analysis
 
 ## Installation
 
