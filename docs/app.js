@@ -33,6 +33,13 @@ class HimmelApp {
         this.setupDragAndDrop('elf-dropzone', 'elf');
         this.setupDragAndDrop('core-dropzone', 'core');
 
+        // Demo binary handlers
+        document.querySelectorAll('.demo-binary-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.handleDemoBinarySelect(e.target.dataset.program, e.target.dataset.arch);
+            });
+        });
+
         // Analyze button
         document.getElementById('analyze-btn').addEventListener('click', () => {
             this.analyzeFiles();
@@ -107,6 +114,58 @@ class HimmelApp {
         const analyzeBtn = document.getElementById('analyze-btn');
         const hasFiles = this.elfFile || this.coreFile;
         analyzeBtn.disabled = !hasFiles;
+    }
+
+    async handleDemoBinarySelect(program, arch) {
+        try {
+            // Show loading state on the selected button
+            const selectedBtn = document.querySelector(`[data-program="${program}"][data-arch="${arch}"]`);
+            const originalText = selectedBtn.textContent;
+            selectedBtn.textContent = 'Loading...';
+            selectedBtn.disabled = true;
+
+            // Fetch the demo binary
+            const response = await fetch(`../demo-binaries/bin/${arch}/${program}`);
+            if (!response.ok) {
+                throw new Error(`Failed to load demo binary: ${response.statusText}`);
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            
+            // Create a File-like object from the binary data
+            const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+            const file = new File([blob], `${program}-${arch}`, { type: 'application/octet-stream' });
+
+            // Use the existing file handling logic
+            this.elfFile = file;
+            this.updateFileInfo('elf', `${program} (${arch})`, file.size);
+            
+            // Show demo binary selection feedback
+            const demoBinaryInfo = document.getElementById('demo-binary-info');
+            const demoBinaryName = document.getElementById('demo-binary-name');
+            demoBinaryName.textContent = `Demo binary loaded: ${program} (${arch})`;
+            demoBinaryInfo.classList.remove('hidden');
+
+            // Hide after 3 seconds
+            setTimeout(() => {
+                demoBinaryInfo.classList.add('hidden');
+            }, 3000);
+
+            this.updateAnalyzeButton();
+            
+            // Restore button
+            selectedBtn.textContent = originalText;
+            selectedBtn.disabled = false;
+            
+        } catch (error) {
+            console.error('Error loading demo binary:', error);
+            this.showError(`Failed to load demo binary: ${error.message}`);
+            
+            // Restore button
+            const selectedBtn = document.querySelector(`[data-program="${program}"][data-arch="${arch}"]`);
+            selectedBtn.textContent = selectedBtn.textContent.replace('Loading...', `📄 ${arch}`);
+            selectedBtn.disabled = false;
+        }
     }
 
     async analyzeFiles() {

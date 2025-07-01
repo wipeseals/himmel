@@ -788,4 +788,52 @@ mod tests {
         assert!(result.elf_info.is_none());
         assert!(result.coredump_info.is_none());
     }
+
+    #[test]
+    fn test_analyze_demo_binaries() {
+        // Test analysis of actual demo binaries for different architectures
+        let demo_paths = [
+            ("demo-binaries/bin/x86_64/hello", "x86_64"),
+            ("demo-binaries/bin/aarch64/hello", "aarch64"),
+            ("demo-binaries/bin/riscv64/hello", "riscv"),  // Note: goblin reports this as "riscv"
+            ("demo-binaries/bin/x86_64/fibonacci", "x86_64"),
+            ("demo-binaries/bin/x86_64/counter", "x86_64"),
+        ];
+
+        for (path, expected_arch) in demo_paths {
+            if std::path::Path::new(path).exists() {
+                let result = analyze_elf(path).unwrap();
+                assert_eq!(result.architecture, expected_arch);
+                // Note: file_type can be either "executable" or "shared_object" depending on linking
+                assert!(["executable", "shared_object"].contains(&result.file_type.as_str()));
+                assert_eq!(result.endianness, "little_endian");
+                assert!(result.entry_point > 0);
+                assert!(!result.sections.is_empty());
+            }
+        }
+    }
+
+    #[test] 
+    fn test_analyze_demo_binaries_from_bytes() {
+        // Test analysis of demo binaries from byte data
+        let demo_paths = [
+            "demo-binaries/bin/x86_64/hello",
+            "demo-binaries/bin/aarch64/fibonacci",
+            "demo-binaries/bin/riscv64/counter",
+        ];
+
+        for path in demo_paths {
+            if std::path::Path::new(path).exists() {
+                let data = std::fs::read(path).unwrap();
+                let result = analyze_elf_from_bytes(&data).unwrap();
+                // Note: file_type can be either "executable" or "shared_object" depending on linking
+                assert!(["executable", "shared_object"].contains(&result.file_type.as_str()));
+                assert_eq!(result.endianness, "little_endian");
+                assert!(result.entry_point > 0);
+                
+                // Architecture should be valid
+                assert!(["x86_64", "aarch64", "riscv"].contains(&result.architecture.as_str()));
+            }
+        }
+    }
 }
