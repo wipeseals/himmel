@@ -220,7 +220,10 @@ pub fn analyze_files(elf_path: Option<&str>, core_path: Option<&str>) -> Result<
 }
 
 /// Analyze both ELF and coredump files from byte buffers (WebAssembly-compatible)
-pub fn analyze_files_from_bytes(elf_data: Option<&[u8]>, core_data: Option<&[u8]>) -> Result<AnalysisResult> {
+pub fn analyze_files_from_bytes(
+    elf_data: Option<&[u8]>,
+    core_data: Option<&[u8]>,
+) -> Result<AnalysisResult> {
     let elf_info = if let Some(data) = elf_data {
         Some(analyze_elf_from_bytes(data)?)
     } else {
@@ -280,7 +283,7 @@ pub fn analyze_coredump_wasm(data: &[u8]) -> String {
 pub fn analyze_files_wasm(elf_data: Option<Box<[u8]>>, core_data: Option<Box<[u8]>>) -> String {
     let elf_slice = elf_data.as_deref();
     let core_slice = core_data.as_deref();
-    
+
     match analyze_files_from_bytes(elf_slice, core_slice) {
         Ok(result) => match to_json(&result) {
             Ok(json) => json,
