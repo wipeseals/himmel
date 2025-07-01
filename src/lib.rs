@@ -34,7 +34,7 @@ pub struct AnalysisResult {
 /// Parse an ELF file and extract basic information
 pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
     let buffer =
-        fs::read(file_path).with_context(|| format!("Failed to read ELF file: {}", file_path))?;
+        fs::read(file_path).with_context(|| format!("Failed to read ELF file: {file_path}"))?;
 
     match Object::parse(&buffer)? {
         Object::Elf(elf) => Ok(extract_elf_info(&elf)),
@@ -95,7 +95,7 @@ pub fn analyze_coredump(file_path: &str) -> Result<CoredumpInfo> {
     use goblin::elf::header::ET_CORE;
 
     let buffer = fs::read(file_path)
-        .with_context(|| format!("Failed to read coredump file: {}", file_path))?;
+        .with_context(|| format!("Failed to read coredump file: {file_path}"))?;
 
     match Object::parse(&buffer)? {
         Object::Elf(elf) => {
