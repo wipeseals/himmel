@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use goblin::elf::Elf;
 use goblin::Object;
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::collections::HashMap;
 use object::{Object as ObjectTrait, ObjectSection};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
 
 // WebAssembly support
 #[cfg(target_arch = "wasm32")]
@@ -120,9 +120,11 @@ pub fn analyze_elf_from_bytes_with_dwarf(buffer: &[u8]) -> Result<ElfInfo> {
     }
 }
 
-fn extract_dwarf_info(buffer: &[u8]) -> Result<(Vec<FunctionInfo>, Vec<VariableInfo>, Vec<TypeInfo>)> {
+fn extract_dwarf_info(
+    buffer: &[u8],
+) -> Result<(Vec<FunctionInfo>, Vec<VariableInfo>, Vec<TypeInfo>)> {
     let object_file = object::File::parse(buffer)?;
-    
+
     // Helper function to load DWARF sections
     let load_section = |id: gimli::SectionId| -> Result<std::borrow::Cow<[u8]>> {
         if let Some(section) = object_file.section_by_name(id.name()) {
@@ -137,10 +139,9 @@ fn extract_dwarf_info(buffer: &[u8]) -> Result<(Vec<FunctionInfo>, Vec<VariableI
 
     // Load DWARF sections
     let dwarf_sections = gimli::DwarfSections::load(load_section)?;
-    
-    let dwarf = dwarf_sections.borrow(|section| {
-        gimli::EndianSlice::new(section, gimli::LittleEndian)
-    });
+
+    let dwarf =
+        dwarf_sections.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
 
     let mut functions = Vec::new();
     let mut variables = Vec::new();
@@ -151,7 +152,7 @@ fn extract_dwarf_info(buffer: &[u8]) -> Result<(Vec<FunctionInfo>, Vec<VariableI
     let mut compilation_units = dwarf.units();
     while let Some(header) = compilation_units.next()? {
         let unit = dwarf.unit(header)?;
-        
+
         // Iterate through DIEs (Debug Information Entries)
         let mut entries = unit.entries();
         while let Some((_, entry)) = entries.next_dfs()? {
@@ -162,12 +163,16 @@ fn extract_dwarf_info(buffer: &[u8]) -> Result<(Vec<FunctionInfo>, Vec<VariableI
                     }
                 }
                 gimli::DW_TAG_variable => {
-                    if let Ok(variable_info) = extract_variable_info(&dwarf, &unit, entry, "global") {
+                    if let Ok(variable_info) = extract_variable_info(&dwarf, &unit, entry, "global")
+                    {
                         variables.push(variable_info);
                     }
                 }
-                gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type => {
-                    if let Ok(type_info) = extract_type_info(&dwarf, &unit, entry, &mut type_cache) {
+                gimli::DW_TAG_structure_type
+                | gimli::DW_TAG_union_type
+                | gimli::DW_TAG_enumeration_type => {
+                    if let Ok(type_info) = extract_type_info(&dwarf, &unit, entry, &mut type_cache)
+                    {
                         types.push(type_info);
                     }
                 }
@@ -185,7 +190,7 @@ fn extract_function_info(
     entry: &gimli::DebuggingInformationEntry<gimli::EndianSlice<gimli::LittleEndian>>,
 ) -> Result<FunctionInfo> {
     let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<unknown>".to_string());
-    
+
     let address = entry
         .attr_value(gimli::DW_AT_low_pc)?
         .and_then(|attr| match attr {
@@ -203,11 +208,11 @@ fn extract_function_info(
         });
 
     let mut parameters = Vec::new();
-    
+
     // Extract parameters
     let mut child_entries = unit.entries_at_offset(entry.offset())?;
     child_entries.next_dfs()?; // Skip the current entry
-    
+
     while let Some((_, child_entry)) = child_entries.next_dfs()? {
         if child_entry.tag() == gimli::DW_TAG_formal_parameter {
             if let Ok(param_info) = extract_variable_info(dwarf, unit, child_entry, "parameter") {
@@ -219,14 +224,12 @@ fn extract_function_info(
     let return_type = entry
         .attr_value(gimli::DW_AT_type)?
         .and_then(|attr| match attr {
-            gimli::AttributeValue::UnitRef(_offset) => {
-                Some(TypeInfo {
-                    name: "<return_type>".to_string(),
-                    size: None,
-                    kind: "unknown".to_string(),
-                    members: Vec::new(),
-                })
-            }
+            gimli::AttributeValue::UnitRef(_offset) => Some(TypeInfo {
+                name: "<return_type>".to_string(),
+                size: None,
+                kind: "unknown".to_string(),
+                members: Vec::new(),
+            }),
             _ => None,
         });
 
@@ -246,7 +249,7 @@ fn extract_variable_info(
     scope: &str,
 ) -> Result<VariableInfo> {
     let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<unknown>".to_string());
-    
+
     let address = entry
         .attr_value(gimli::DW_AT_location)?
         .and_then(|attr| match attr {
@@ -255,8 +258,14 @@ fn extract_variable_info(
                 if expr.0.len() >= 9 && expr.0[0] == gimli::DW_OP_addr.0 {
                     let addr_bytes = &expr.0[1..9];
                     Some(u64::from_le_bytes([
-                        addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3],
-                        addr_bytes[4], addr_bytes[5], addr_bytes[6], addr_bytes[7],
+                        addr_bytes[0],
+                        addr_bytes[1],
+                        addr_bytes[2],
+                        addr_bytes[3],
+                        addr_bytes[4],
+                        addr_bytes[5],
+                        addr_bytes[6],
+                        addr_bytes[7],
                     ]))
                 } else {
                     None
@@ -296,7 +305,7 @@ fn extract_type_info(
     type_cache: &mut HashMap<gimli::UnitOffset, TypeInfo>,
 ) -> Result<TypeInfo> {
     let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<anonymous>".to_string());
-    
+
     let size = entry
         .attr_value(gimli::DW_AT_byte_size)?
         .and_then(|attr| match attr {
@@ -309,15 +318,16 @@ fn extract_type_info(
         gimli::DW_TAG_union_type => "union",
         gimli::DW_TAG_enumeration_type => "enum",
         _ => "unknown",
-    }.to_string();
+    }
+    .to_string();
 
     let mut members = Vec::new();
-    
+
     // Extract members for struct/union
     if entry.tag() == gimli::DW_TAG_structure_type || entry.tag() == gimli::DW_TAG_union_type {
         let mut child_entries = unit.entries_at_offset(entry.offset())?;
         child_entries.next_dfs()?; // Skip the current entry
-        
+
         while let Some((_, child_entry)) = child_entries.next_dfs()? {
             if child_entry.tag() == gimli::DW_TAG_member {
                 if let Ok(member_info) = extract_member_info(dwarf, unit, child_entry, type_cache) {
@@ -342,7 +352,7 @@ fn extract_member_info(
     _type_cache: &mut HashMap<gimli::UnitOffset, TypeInfo>,
 ) -> Result<MemberInfo> {
     let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<unknown>".to_string());
-    
+
     let offset = entry
         .attr_value(gimli::DW_AT_data_member_location)?
         .and_then(|attr| match attr {
@@ -376,9 +386,7 @@ fn get_die_name(
                 let name = dwarf.debug_str.get_str(offset)?;
                 Ok(Some(name.to_string_lossy().into_owned()))
             }
-            gimli::AttributeValue::String(name) => {
-                Ok(Some(name.to_string_lossy().into_owned()))
-            }
+            gimli::AttributeValue::String(name) => Ok(Some(name.to_string_lossy().into_owned())),
             _ => Ok(None),
         }
     } else {
@@ -1194,7 +1202,7 @@ int main() {
 
         // Compile with debug info
         let output = std::process::Command::new("gcc")
-            .args(&["-g", "-O0", "-o"])
+            .args(["-g", "-O0", "-o"])
             .arg(&binary_path)
             .arg(&source_path)
             .output();
@@ -1205,17 +1213,19 @@ int main() {
                 if let Ok(result) = analyze_elf_with_dwarf(binary_path.to_str().unwrap()) {
                     // Should have detected debug information
                     assert_eq!(result.architecture, "x86_64");
-                    
+
                     // Should have extracted some functions
-                    let function_names: Vec<&str> = result.functions.iter().map(|f| f.name.as_str()).collect();
+                    let function_names: Vec<&str> =
+                        result.functions.iter().map(|f| f.name.as_str()).collect();
                     assert!(function_names.contains(&"main") || function_names.contains(&"add"));
-                    
+
                     // Should have extracted some types
-                    let type_names: Vec<&str> = result.types.iter().map(|t| t.name.as_str()).collect();
+                    let type_names: Vec<&str> =
+                        result.types.iter().map(|t| t.name.as_str()).collect();
                     // Note: types might not always be detected depending on compilation
-                    
-                    println!("Functions found: {:?}", function_names);
-                    println!("Types found: {:?}", type_names);
+
+                    println!("Functions found: {function_names:?}");
+                    println!("Types found: {type_names:?}");
                 }
             }
         }
@@ -1229,20 +1239,18 @@ int main() {
             name: "test_function".to_string(),
             address: 0x1000,
             size: Some(100),
-            parameters: vec![
-                VariableInfo {
-                    name: "param1".to_string(),
-                    address: None,
-                    offset: Some(8),
-                    type_info: TypeInfo {
-                        name: "int".to_string(),
-                        size: Some(4),
-                        kind: "basic".to_string(),
-                        members: Vec::new(),
-                    },
-                    scope: "parameter".to_string(),
-                }
-            ],
+            parameters: vec![VariableInfo {
+                name: "param1".to_string(),
+                address: None,
+                offset: Some(8),
+                type_info: TypeInfo {
+                    name: "int".to_string(),
+                    size: Some(4),
+                    kind: "basic".to_string(),
+                    members: Vec::new(),
+                },
+                scope: "parameter".to_string(),
+            }],
             return_type: Some(TypeInfo {
                 name: "int".to_string(),
                 size: Some(4),
@@ -1316,76 +1324,68 @@ int main() {
             sections: vec![".text".to_string(), ".data".to_string()],
             file_type: "executable".to_string(),
             endianness: "little_endian".to_string(),
-            functions: vec![
-                FunctionInfo {
-                    name: "main".to_string(),
-                    address: 0x1100,
-                    size: Some(50),
-                    parameters: vec![
-                        VariableInfo {
-                            name: "argc".to_string(),
-                            address: None,
-                            offset: Some(8),
-                            type_info: TypeInfo {
-                                name: "int".to_string(),
-                                size: Some(4),
-                                kind: "basic".to_string(),
-                                members: Vec::new(),
-                            },
-                            scope: "parameter".to_string(),
-                        }
-                    ],
-                    return_type: Some(TypeInfo {
-                        name: "int".to_string(),
-                        size: Some(4),
-                        kind: "basic".to_string(),
-                        members: Vec::new(),
-                    }),
-                }
-            ],
-            variables: vec![
-                VariableInfo {
-                    name: "global_counter".to_string(),
-                    address: Some(0x2000),
-                    offset: None,
+            functions: vec![FunctionInfo {
+                name: "main".to_string(),
+                address: 0x1100,
+                size: Some(50),
+                parameters: vec![VariableInfo {
+                    name: "argc".to_string(),
+                    address: None,
+                    offset: Some(8),
                     type_info: TypeInfo {
                         name: "int".to_string(),
                         size: Some(4),
                         kind: "basic".to_string(),
                         members: Vec::new(),
                     },
-                    scope: "global".to_string(),
-                }
-            ],
-            types: vec![
-                TypeInfo {
-                    name: "Point".to_string(),
-                    size: Some(8),
-                    kind: "struct".to_string(),
-                    members: vec![
-                        MemberInfo {
-                            name: "x".to_string(),
-                            offset: 0,
-                            type_info: TypeInfo {
-                                name: "int".to_string(),
-                                size: Some(4),
-                                kind: "basic".to_string(),
-                                members: Vec::new(),
-                            },
+                    scope: "parameter".to_string(),
+                }],
+                return_type: Some(TypeInfo {
+                    name: "int".to_string(),
+                    size: Some(4),
+                    kind: "basic".to_string(),
+                    members: Vec::new(),
+                }),
+            }],
+            variables: vec![VariableInfo {
+                name: "global_counter".to_string(),
+                address: Some(0x2000),
+                offset: None,
+                type_info: TypeInfo {
+                    name: "int".to_string(),
+                    size: Some(4),
+                    kind: "basic".to_string(),
+                    members: Vec::new(),
+                },
+                scope: "global".to_string(),
+            }],
+            types: vec![TypeInfo {
+                name: "Point".to_string(),
+                size: Some(8),
+                kind: "struct".to_string(),
+                members: vec![
+                    MemberInfo {
+                        name: "x".to_string(),
+                        offset: 0,
+                        type_info: TypeInfo {
+                            name: "int".to_string(),
+                            size: Some(4),
+                            kind: "basic".to_string(),
+                            members: Vec::new(),
                         },
-                        MemberInfo {
-                            name: "y".to_string(),
-                            offset: 4,
-                            type_info: TypeInfo {
-                                name: "int".to_string(),
-                                size: Some(4),
-                                kind: "basic".to_string(),
-                                members: Vec::new(),
-                            },
-                        }
-                    ],
-                }
-            ],
+                    },
+                    MemberInfo {
+                        name: "y".to_string(),
+                        offset: 4,
+                        type_info: TypeInfo {
+                            name: "int".to_string(),
+                            size: Some(4),
+                            kind: "basic".to_string(),
+                            members: Vec::new(),
+                        },
+                    },
+                ],
+            }],
         };
 
         let analysis_result = AnalysisResult {
@@ -1395,21 +1395,21 @@ int main() {
 
         // Test JSON serialization
         let json = to_json(&analysis_result).expect("Should serialize to JSON");
-        
+
         // Verify it's valid JSON
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("Should be valid JSON");
-        
+
         // Test jq-like access patterns (verify structure is accessible)
         assert!(parsed["elf_info"]["functions"].is_array());
         assert!(parsed["elf_info"]["variables"].is_array());
         assert!(parsed["elf_info"]["types"].is_array());
-        
+
         // Verify function information
         let functions = &parsed["elf_info"]["functions"];
         assert_eq!(functions[0]["name"], "main");
         assert_eq!(functions[0]["address"], 0x1100);
         assert_eq!(functions[0]["parameters"][0]["name"], "argc");
-        
+
         // Verify type information
         let types = &parsed["elf_info"]["types"];
         assert_eq!(types[0]["name"], "Point");
@@ -1417,7 +1417,7 @@ int main() {
         assert_eq!(types[0]["members"][0]["name"], "x");
         assert_eq!(types[0]["members"][0]["offset"], 0);
         assert_eq!(types[0]["members"][1]["offset"], 4);
-        
+
         // Verify variable information
         let variables = &parsed["elf_info"]["variables"];
         assert_eq!(variables[0]["name"], "global_counter");

@@ -56,10 +56,82 @@ himmel --elf ./a.out --core ./core.12345
       ".text",
       ".data",
       ".bss",
-      ".rodata"
+      ".rodata",
+      ".debug_info",
+      ".debug_abbrev"
     ],
     "file_type": "executable",
-    "endianness": "little_endian"
+    "endianness": "little_endian",
+    "functions": [
+      {
+        "name": "main",
+        "address": 4196,
+        "size": 45,
+        "parameters": [
+          {
+            "name": "argc",
+            "address": null,
+            "offset": 8,
+            "type_info": {
+              "name": "int",
+              "size": 4,
+              "kind": "basic",
+              "members": []
+            },
+            "scope": "parameter"
+          }
+        ],
+        "return_type": {
+          "name": "int",
+          "size": 4,
+          "kind": "basic",
+          "members": []
+        }
+      }
+    ],
+    "variables": [
+      {
+        "name": "global_counter",
+        "address": 8192,
+        "offset": null,
+        "type_info": {
+          "name": "int",
+          "size": 4,
+          "kind": "basic",
+          "members": []
+        },
+        "scope": "global"
+      }
+    ],
+    "types": [
+      {
+        "name": "Point",
+        "size": 8,
+        "kind": "struct",
+        "members": [
+          {
+            "name": "x",
+            "offset": 0,
+            "type_info": {
+              "name": "int",
+              "size": 4,
+              "kind": "basic",
+              "members": []
+            }
+          },
+          {
+            "name": "y",
+            "offset": 4,
+            "type_info": {
+              "name": "int",
+              "size": 4,
+              "kind": "basic",
+              "members": []
+            }
+          }
+        ]
+      }
+    ]
   },
   "coredump_info": {
     "threads": [
