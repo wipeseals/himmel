@@ -3,6 +3,8 @@ use goblin::elf::Elf;
 use goblin::Object;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::collections::HashMap;
+use object::{Object as ObjectTrait, ObjectSection};
 
 // WebAssembly support
 #[cfg(target_arch = "wasm32")]
@@ -20,6 +22,39 @@ macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FunctionInfo {
+    pub name: String,
+    pub address: u64,
+    pub size: Option<u64>,
+    pub parameters: Vec<VariableInfo>,
+    pub return_type: Option<TypeInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VariableInfo {
+    pub name: String,
+    pub address: Option<u64>,
+    pub offset: Option<i64>,
+    pub type_info: TypeInfo,
+    pub scope: String, // "global", "local", "parameter"
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TypeInfo {
+    pub name: String,
+    pub size: Option<u64>,
+    pub kind: String, // "basic", "struct", "enum", "union", "pointer", "array"
+    pub members: Vec<MemberInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MemberInfo {
+    pub name: String,
+    pub offset: u64,
+    pub type_info: TypeInfo,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ElfInfo {
     pub architecture: String,
@@ -27,6 +62,9 @@ pub struct ElfInfo {
     pub sections: Vec<String>,
     pub file_type: String,
     pub endianness: String,
+    pub functions: Vec<FunctionInfo>,
+    pub variables: Vec<VariableInfo>,
+    pub types: Vec<TypeInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -47,8 +85,314 @@ pub struct AnalysisResult {
     pub coredump_info: Option<CoredumpInfo>,
 }
 
-/// Parse an ELF file and extract basic information
+/// Parse DWARF information from ELF file and extract enhanced information
+pub fn analyze_elf_with_dwarf(file_path: &str) -> Result<ElfInfo> {
+    let buffer =
+        fs::read(file_path).with_context(|| format!("Failed to read ELF file: {file_path}"))?;
+
+    match Object::parse(&buffer)? {
+        Object::Elf(elf) => {
+            let mut elf_info = extract_elf_info(&elf);
+            if let Ok(dwarf_info) = extract_dwarf_info(&buffer) {
+                elf_info.functions = dwarf_info.0;
+                elf_info.variables = dwarf_info.1;
+                elf_info.types = dwarf_info.2;
+            }
+            Ok(elf_info)
+        }
+        _ => anyhow::bail!("File is not a valid ELF binary"),
+    }
+}
+
+/// Parse DWARF information from ELF byte buffer (WebAssembly-compatible)
+pub fn analyze_elf_from_bytes_with_dwarf(buffer: &[u8]) -> Result<ElfInfo> {
+    match Object::parse(buffer)? {
+        Object::Elf(elf) => {
+            let mut elf_info = extract_elf_info(&elf);
+            if let Ok(dwarf_info) = extract_dwarf_info(buffer) {
+                elf_info.functions = dwarf_info.0;
+                elf_info.variables = dwarf_info.1;
+                elf_info.types = dwarf_info.2;
+            }
+            Ok(elf_info)
+        }
+        _ => anyhow::bail!("File is not a valid ELF binary"),
+    }
+}
+
+fn extract_dwarf_info(buffer: &[u8]) -> Result<(Vec<FunctionInfo>, Vec<VariableInfo>, Vec<TypeInfo>)> {
+    let object_file = object::File::parse(buffer)?;
+    
+    // Helper function to load DWARF sections
+    let load_section = |id: gimli::SectionId| -> Result<std::borrow::Cow<[u8]>> {
+        if let Some(section) = object_file.section_by_name(id.name()) {
+            match section.uncompressed_data() {
+                Ok(data) => Ok(data),
+                Err(_) => Ok(std::borrow::Cow::Borrowed(&[])),
+            }
+        } else {
+            Ok(std::borrow::Cow::Borrowed(&[]))
+        }
+    };
+
+    // Load DWARF sections
+    let dwarf_sections = gimli::DwarfSections::load(load_section)?;
+    
+    let dwarf = dwarf_sections.borrow(|section| {
+        gimli::EndianSlice::new(section, gimli::LittleEndian)
+    });
+
+    let mut functions = Vec::new();
+    let mut variables = Vec::new();
+    let mut types = Vec::new();
+    let mut type_cache: HashMap<gimli::UnitOffset, TypeInfo> = HashMap::new();
+
+    // Iterate through compilation units
+    let mut compilation_units = dwarf.units();
+    while let Some(header) = compilation_units.next()? {
+        let unit = dwarf.unit(header)?;
+        
+        // Iterate through DIEs (Debug Information Entries)
+        let mut entries = unit.entries();
+        while let Some((_, entry)) = entries.next_dfs()? {
+            match entry.tag() {
+                gimli::DW_TAG_subprogram => {
+                    if let Ok(function_info) = extract_function_info(&dwarf, &unit, entry) {
+                        functions.push(function_info);
+                    }
+                }
+                gimli::DW_TAG_variable => {
+                    if let Ok(variable_info) = extract_variable_info(&dwarf, &unit, entry, "global") {
+                        variables.push(variable_info);
+                    }
+                }
+                gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type => {
+                    if let Ok(type_info) = extract_type_info(&dwarf, &unit, entry, &mut type_cache) {
+                        types.push(type_info);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok((functions, variables, types))
+}
+
+fn extract_function_info(
+    dwarf: &gimli::Dwarf<gimli::EndianSlice<gimli::LittleEndian>>,
+    unit: &gimli::Unit<gimli::EndianSlice<gimli::LittleEndian>>,
+    entry: &gimli::DebuggingInformationEntry<gimli::EndianSlice<gimli::LittleEndian>>,
+) -> Result<FunctionInfo> {
+    let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<unknown>".to_string());
+    
+    let address = entry
+        .attr_value(gimli::DW_AT_low_pc)?
+        .and_then(|attr| match attr {
+            gimli::AttributeValue::Addr(addr) => Some(addr),
+            _ => None,
+        })
+        .unwrap_or(0);
+
+    let size = entry
+        .attr_value(gimli::DW_AT_high_pc)?
+        .and_then(|attr| match attr {
+            gimli::AttributeValue::Udata(size) => Some(size),
+            gimli::AttributeValue::Addr(high_pc) => Some(high_pc.saturating_sub(address)),
+            _ => None,
+        });
+
+    let mut parameters = Vec::new();
+    
+    // Extract parameters
+    let mut child_entries = unit.entries_at_offset(entry.offset())?;
+    child_entries.next_dfs()?; // Skip the current entry
+    
+    while let Some((_, child_entry)) = child_entries.next_dfs()? {
+        if child_entry.tag() == gimli::DW_TAG_formal_parameter {
+            if let Ok(param_info) = extract_variable_info(dwarf, unit, child_entry, "parameter") {
+                parameters.push(param_info);
+            }
+        }
+    }
+
+    let return_type = entry
+        .attr_value(gimli::DW_AT_type)?
+        .and_then(|attr| match attr {
+            gimli::AttributeValue::UnitRef(_offset) => {
+                Some(TypeInfo {
+                    name: "<return_type>".to_string(),
+                    size: None,
+                    kind: "unknown".to_string(),
+                    members: Vec::new(),
+                })
+            }
+            _ => None,
+        });
+
+    Ok(FunctionInfo {
+        name,
+        address,
+        size,
+        parameters,
+        return_type,
+    })
+}
+
+fn extract_variable_info(
+    dwarf: &gimli::Dwarf<gimli::EndianSlice<gimli::LittleEndian>>,
+    unit: &gimli::Unit<gimli::EndianSlice<gimli::LittleEndian>>,
+    entry: &gimli::DebuggingInformationEntry<gimli::EndianSlice<gimli::LittleEndian>>,
+    scope: &str,
+) -> Result<VariableInfo> {
+    let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<unknown>".to_string());
+    
+    let address = entry
+        .attr_value(gimli::DW_AT_location)?
+        .and_then(|attr| match attr {
+            gimli::AttributeValue::Exprloc(expr) => {
+                // Simple case: direct address
+                if expr.0.len() >= 9 && expr.0[0] == gimli::DW_OP_addr.0 {
+                    let addr_bytes = &expr.0[1..9];
+                    Some(u64::from_le_bytes([
+                        addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3],
+                        addr_bytes[4], addr_bytes[5], addr_bytes[6], addr_bytes[7],
+                    ]))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        });
+
+    let type_info = entry
+        .attr_value(gimli::DW_AT_type)?
+        .map(|_| TypeInfo {
+            name: "unknown".to_string(),
+            size: None,
+            kind: "basic".to_string(),
+            members: Vec::new(),
+        })
+        .unwrap_or_else(|| TypeInfo {
+            name: "void".to_string(),
+            size: None,
+            kind: "basic".to_string(),
+            members: Vec::new(),
+        });
+
+    Ok(VariableInfo {
+        name,
+        address,
+        offset: None,
+        type_info,
+        scope: scope.to_string(),
+    })
+}
+
+fn extract_type_info(
+    dwarf: &gimli::Dwarf<gimli::EndianSlice<gimli::LittleEndian>>,
+    unit: &gimli::Unit<gimli::EndianSlice<gimli::LittleEndian>>,
+    entry: &gimli::DebuggingInformationEntry<gimli::EndianSlice<gimli::LittleEndian>>,
+    type_cache: &mut HashMap<gimli::UnitOffset, TypeInfo>,
+) -> Result<TypeInfo> {
+    let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<anonymous>".to_string());
+    
+    let size = entry
+        .attr_value(gimli::DW_AT_byte_size)?
+        .and_then(|attr| match attr {
+            gimli::AttributeValue::Udata(size) => Some(size),
+            _ => None,
+        });
+
+    let kind = match entry.tag() {
+        gimli::DW_TAG_structure_type => "struct",
+        gimli::DW_TAG_union_type => "union",
+        gimli::DW_TAG_enumeration_type => "enum",
+        _ => "unknown",
+    }.to_string();
+
+    let mut members = Vec::new();
+    
+    // Extract members for struct/union
+    if entry.tag() == gimli::DW_TAG_structure_type || entry.tag() == gimli::DW_TAG_union_type {
+        let mut child_entries = unit.entries_at_offset(entry.offset())?;
+        child_entries.next_dfs()?; // Skip the current entry
+        
+        while let Some((_, child_entry)) = child_entries.next_dfs()? {
+            if child_entry.tag() == gimli::DW_TAG_member {
+                if let Ok(member_info) = extract_member_info(dwarf, unit, child_entry, type_cache) {
+                    members.push(member_info);
+                }
+            }
+        }
+    }
+
+    Ok(TypeInfo {
+        name,
+        size,
+        kind,
+        members,
+    })
+}
+
+fn extract_member_info(
+    dwarf: &gimli::Dwarf<gimli::EndianSlice<gimli::LittleEndian>>,
+    unit: &gimli::Unit<gimli::EndianSlice<gimli::LittleEndian>>,
+    entry: &gimli::DebuggingInformationEntry<gimli::EndianSlice<gimli::LittleEndian>>,
+    _type_cache: &mut HashMap<gimli::UnitOffset, TypeInfo>,
+) -> Result<MemberInfo> {
+    let name = get_die_name(dwarf, unit, entry)?.unwrap_or_else(|| "<unknown>".to_string());
+    
+    let offset = entry
+        .attr_value(gimli::DW_AT_data_member_location)?
+        .and_then(|attr| match attr {
+            gimli::AttributeValue::Udata(offset) => Some(offset),
+            _ => None,
+        })
+        .unwrap_or(0);
+
+    let type_info = TypeInfo {
+        name: "unknown".to_string(),
+        size: None,
+        kind: "basic".to_string(),
+        members: Vec::new(),
+    };
+
+    Ok(MemberInfo {
+        name,
+        offset,
+        type_info,
+    })
+}
+
+fn get_die_name(
+    dwarf: &gimli::Dwarf<gimli::EndianSlice<gimli::LittleEndian>>,
+    _unit: &gimli::Unit<gimli::EndianSlice<gimli::LittleEndian>>,
+    entry: &gimli::DebuggingInformationEntry<gimli::EndianSlice<gimli::LittleEndian>>,
+) -> Result<Option<String>> {
+    if let Some(attr) = entry.attr_value(gimli::DW_AT_name)? {
+        match attr {
+            gimli::AttributeValue::DebugStrRef(offset) => {
+                let name = dwarf.debug_str.get_str(offset)?;
+                Ok(Some(name.to_string_lossy().into_owned()))
+            }
+            gimli::AttributeValue::String(name) => {
+                Ok(Some(name.to_string_lossy().into_owned()))
+            }
+            _ => Ok(None),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+/// Parse an ELF file and extract basic information (backward compatibility)
 pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
+    analyze_elf_with_dwarf(file_path)
+}
+
+/// Parse an ELF file and extract basic information only (no DWARF)
+pub fn analyze_elf_basic(file_path: &str) -> Result<ElfInfo> {
     let buffer =
         fs::read(file_path).with_context(|| format!("Failed to read ELF file: {file_path}"))?;
 
@@ -60,10 +404,7 @@ pub fn analyze_elf(file_path: &str) -> Result<ElfInfo> {
 
 /// Parse an ELF file from byte buffer and extract basic information (WebAssembly-compatible)
 pub fn analyze_elf_from_bytes(buffer: &[u8]) -> Result<ElfInfo> {
-    match Object::parse(buffer)? {
-        Object::Elf(elf) => Ok(extract_elf_info(&elf)),
-        _ => anyhow::bail!("File is not a valid ELF binary"),
-    }
+    analyze_elf_from_bytes_with_dwarf(buffer)
 }
 
 fn extract_elf_info(elf: &Elf) -> ElfInfo {
@@ -111,6 +452,9 @@ fn extract_elf_info(elf: &Elf) -> ElfInfo {
         sections,
         file_type,
         endianness,
+        functions: Vec::new(),
+        variables: Vec::new(),
+        types: Vec::new(),
     }
 }
 
@@ -408,6 +752,9 @@ mod tests {
             sections: vec![".text".to_string(), ".data".to_string()],
             file_type: "executable".to_string(),
             endianness: "little_endian".to_string(),
+            functions: Vec::new(),
+            variables: Vec::new(),
+            types: Vec::new(),
         };
 
         let thread_info = ThreadInfo {
@@ -692,6 +1039,9 @@ mod tests {
             sections: vec![".init".to_string(), ".fini".to_string()],
             file_type: "shared_object".to_string(),
             endianness: "big_endian".to_string(),
+            functions: Vec::new(),
+            variables: Vec::new(),
+            types: Vec::new(),
         };
 
         assert_eq!(elf.architecture, "arm");
