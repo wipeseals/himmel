@@ -67,8 +67,6 @@ pub struct ElfInfo {
     pub types: Vec<TypeInfo>,
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnalysisResult {
     pub elf_info: Option<ElfInfo>,
@@ -471,24 +469,18 @@ pub fn analyze_files(elf_path: Option<&str>) -> Result<AnalysisResult> {
         None
     };
 
-    Ok(AnalysisResult {
-        elf_info,
-    })
+    Ok(AnalysisResult { elf_info })
 }
 
 /// Analyze ELF files from byte buffers (WebAssembly-compatible)
-pub fn analyze_files_from_bytes(
-    elf_data: Option<&[u8]>,
-) -> Result<AnalysisResult> {
+pub fn analyze_files_from_bytes(elf_data: Option<&[u8]>) -> Result<AnalysisResult> {
     let elf_info = if let Some(data) = elf_data {
         Some(analyze_elf_from_bytes(data)?)
     } else {
         None
     };
 
-    Ok(AnalysisResult {
-        elf_info,
-    })
+    Ok(AnalysisResult { elf_info })
 }
 
 /// Convert analysis result to prettified JSON
@@ -526,8 +518,6 @@ pub fn analyze_elf_basic_wasm(data: &[u8]) -> String {
         Err(e) => format!("{{\"error\": \"{}\"}}", e),
     }
 }
-
-
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -580,8 +570,6 @@ mod tests {
         file
     }
 
-
-
     fn create_invalid_file() -> NamedTempFile {
         let mut file = NamedTempFile::new().expect("Failed to create temp file");
         file.write_all(b"not an elf file")
@@ -591,9 +579,7 @@ mod tests {
 
     #[test]
     fn test_analysis_result_serialization() {
-        let result = AnalysisResult {
-            elf_info: None,
-        };
+        let result = AnalysisResult { elf_info: None };
 
         let json = to_json(&result).unwrap();
         assert!(json.contains("elf_info"));
@@ -705,8 +691,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-
-
     #[test]
     fn test_extract_elf_info_different_architectures() {
         // Since we can't easily mock goblin::elf::Elf, we'll test via the public interface
@@ -743,9 +727,7 @@ mod tests {
     #[test]
     fn test_to_json_error_handling() {
         // Test with a result that should serialize properly
-        let result = AnalysisResult {
-            elf_info: None,
-        };
+        let result = AnalysisResult { elf_info: None };
 
         let json_result = to_json(&result);
         assert!(json_result.is_ok());
@@ -753,10 +735,6 @@ mod tests {
         let json = json_result.unwrap();
         assert!(serde_json::from_str::<serde_json::Value>(&json).is_ok());
     }
-
-
-
-
 
     #[test]
     fn test_elf_info_creation() {
