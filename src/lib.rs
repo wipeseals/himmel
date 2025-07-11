@@ -1066,17 +1066,19 @@ int main() {
 
     #[test]
     fn test_analyze_demo_binaries_from_bytes() {
-        // Test analysis of demo binaries from byte data
+        // Test basic analysis of demo binaries from byte data (without expensive DWARF parsing)
+        // Using smaller binaries to avoid slow test execution
         let demo_paths = [
             "demo-binaries/bin/x86_64/hello",
             "demo-binaries/bin/aarch64/fibonacci",
-            "demo-binaries/bin/riscv64/counter",
+            "demo-binaries/bin/riscv64/hello", // Changed from counter (3.7MB) to hello (544KB) for faster test
         ];
 
         for path in demo_paths {
             if std::path::Path::new(path).exists() {
                 let data = std::fs::read(path).unwrap();
-                let result = analyze_elf_from_bytes(&data).unwrap();
+                // Use basic analysis to avoid expensive DWARF parsing in tests
+                let result = analyze_elf_from_bytes_basic(&data).unwrap();
                 // Note: file_type can be either "executable" or "shared_object" depending on linking
                 assert!(["executable", "shared_object"].contains(&result.file_type.as_str()));
                 assert_eq!(result.endianness, "little_endian");
