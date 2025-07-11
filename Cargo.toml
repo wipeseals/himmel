@@ -2,7 +2,7 @@
 name = "himmel"
 version = "0.1.0"
 edition = "2021"
-description = "Rust CLI tool for analyzing ELF and coredump files using DWARF info. WebAssembly-ready."
+description = "Rust CLI tool for analyzing ELF files using DWARF info. WebAssembly-ready."
 license = "MIT"
 authors = ["wipeseals"]
 repository = "https://github.com/wipeseals/himmel"

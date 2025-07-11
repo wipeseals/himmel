@@ -1,10 +1,9 @@
-import init, { analyze_files_wasm, analyze_elf_wasm, analyze_coredump_wasm } from './himmel.js';
+import init, { analyze_files_wasm, analyze_elf_wasm } from './himmel.js';
 
 class HimmelApp {
     constructor() {
         this.wasmModule = null;
         this.elfFile = null;
-        this.coreFile = null;
         this.init();
     }
 
@@ -24,14 +23,9 @@ class HimmelApp {
         document.getElementById('elf-file-upload').addEventListener('change', (e) => {
             this.handleFileSelect(e.target.files[0], 'elf');
         });
-        
-        document.getElementById('core-file-upload').addEventListener('change', (e) => {
-            this.handleFileSelect(e.target.files[0], 'core');
-        });
 
         // Drag and drop handlers
         this.setupDragAndDrop('elf-dropzone', 'elf');
-        this.setupDragAndDrop('core-dropzone', 'core');
 
         // Demo binary handlers
         document.querySelectorAll('.demo-binary-btn').forEach(btn => {
@@ -84,9 +78,6 @@ class HimmelApp {
         if (fileType === 'elf') {
             this.elfFile = file;
             this.updateFileInfo('elf', file.name, file.size);
-        } else {
-            this.coreFile = file;
-            this.updateFileInfo('core', file.name, file.size);
         }
 
         this.updateAnalyzeButton();
@@ -112,7 +103,7 @@ class HimmelApp {
 
     updateAnalyzeButton() {
         const analyzeBtn = document.getElementById('analyze-btn');
-        const hasFiles = this.elfFile || this.coreFile;
+        const hasFiles = this.elfFile;
         analyzeBtn.disabled = !hasFiles;
     }
 
@@ -180,20 +171,14 @@ class HimmelApp {
 
         try {
             let elfData = null;
-            let coreData = null;
 
             // Read ELF file if provided
             if (this.elfFile) {
                 elfData = new Uint8Array(await this.elfFile.arrayBuffer());
             }
 
-            // Read core file if provided
-            if (this.coreFile) {
-                coreData = new Uint8Array(await this.coreFile.arrayBuffer());
-            }
-
             // Call WebAssembly function
-            const result = analyze_files_wasm(elfData, coreData);
+            const result = analyze_files_wasm(elfData);
             
             // Parse result
             const analysisResult = JSON.parse(result);
@@ -241,11 +226,6 @@ class HimmelApp {
         // ELF Information
         if (results.elf_info) {
             html += this.renderElfInfo(results.elf_info);
-        }
-
-        // Coredump Information
-        if (results.coredump_info) {
-            html += this.renderCoredumpInfo(results.coredump_info);
         }
 
         // Raw JSON
@@ -433,40 +413,7 @@ class HimmelApp {
         `;
     }
 
-    renderCoredumpInfo(coredumpInfo) {
-        return `
-            <div class="mb-6">
-                <h3 class="text-lg font-semibold text-gray-900 mb-3">Coredump Information</h3>
-                <div class="bg-gray-50 rounded-lg p-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <dt class="text-sm font-medium text-gray-500">Architecture</dt>
-                            <dd class="mt-1 text-sm text-gray-900">${coredumpInfo.architecture}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-sm font-medium text-gray-500">Thread Count</dt>
-                            <dd class="mt-1 text-sm text-gray-900">${coredumpInfo.threads.length}</dd>
-                        </div>
-                    </div>
-                    ${coredumpInfo.threads && coredumpInfo.threads.length > 0 ? `
-                        <div class="mt-4">
-                            <dt class="text-sm font-medium text-gray-500">Threads</dt>
-                            <div class="mt-1 space-y-2">
-                                ${coredumpInfo.threads.map(thread => `
-                                    <div class="bg-white rounded border p-3">
-                                        <div class="flex justify-between items-center">
-                                            <span class="font-medium text-sm">Thread ${thread.thread_id}</span>
-                                            <span class="text-xs text-gray-500">${thread.registers.length} bytes register data</span>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-        `;
-    }
+
 
     renderRawJson(results) {
         return `
