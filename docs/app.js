@@ -116,7 +116,7 @@ class HimmelApp {
             selectedBtn.disabled = true;
 
             // Fetch the demo binary
-            const response = await fetch(`../demo-binaries/bin/${arch}/${program}`);
+            const response = await fetch(`demo-binaries/bin/${arch}/${program}`);
             if (!response.ok) {
                 throw new Error(`Failed to load demo binary: ${response.statusText}`);
             }
