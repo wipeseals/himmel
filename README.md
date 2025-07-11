@@ -1,19 +1,19 @@
 # himmel
 
-Rust CLI tool for analyzing ELF and coredump files (DWARF info), WebAssembly-ready
+Rust CLI tool for analyzing ELF binaries (DWARF info), WebAssembly-ready
 
 ## Overview
 
-This tool analyzes ELF binaries and Linux coredump files, extracting basic ELF information and thread/register info from coredumps. The logic is structured in a library crate (`lib.rs`) so that future WebAssembly bindings can be easily added. CLI is implemented in `src/main.rs`. No external dependencies (like gdb) are required; this uses goblin for ELF parsing and serde for output.
+This tool analyzes ELF binaries, extracting basic ELF information and detailed debug information using DWARF parsing. The logic is structured in a library crate (`lib.rs`) so that WebAssembly bindings can be easily used. CLI is implemented in `src/main.rs`. No external dependencies (like gdb) are required; this uses goblin for ELF parsing and serde for output.
 
 **🌐 [Try the Web Interface](https://wipeseals.github.io/himmel/)** - Analyze files directly in your browser using WebAssembly!
 
 ## Features
 
 - **Parse ELF file**: show architecture, entry point, section names, file type, endianness
-- **Parse coredump**: show thread IDs and raw register data (minimum viable)
-- **Output results as prettified JSON** (for easy piping or future Web UI integration)
-- **Structure is future-proof** for DWARF parsing (gimli crate can be added next)
+- **Extract DWARF debug information**: detailed function signatures, variable information, and complete type definitions
+- **Output results as prettified JSON** (for easy piping or Web UI integration)
+- **Structure is future-proof** for additional DWARF parsing features
 - **No external dependencies** - uses goblin for ELF parsing, serde for JSON output
 - **Demo binaries**: Pre-compiled sample programs for testing (C, Rust) in multiple architectures (x86_64, aarch64, riscv64)
 - **Web interface**: Select from demo binaries or upload your own files for analysis
@@ -37,12 +37,6 @@ The binary will be available at `target/release/himmel`.
 ```bash
 # Analyze an ELF file
 himmel --elf ./a.out
-
-# Analyze a coredump
-himmel --core ./core.12345
-
-# Analyze both ELF and coredump
-himmel --elf ./a.out --core ./core.12345
 ```
 
 ### Example output
@@ -59,16 +53,25 @@ himmel --elf ./a.out --core ./core.12345
       ".rodata"
     ],
     "file_type": "executable",
-    "endianness": "little_endian"
-  },
-  "coredump_info": {
-    "threads": [
+    "endianness": "little_endian",
+    "functions": [
       {
-        "thread_id": 0,
-        "registers": [...]
+        "name": "main",
+        "address": 4200336,
+        "size": 42,
+        "parameters": [
+          {
+            "name": "argc",
+            "type_info": {
+              "name": "int",
+              "kind": "basic"
+            }
+          }
+        ]
       }
     ],
-    "architecture": "x86_64"
+    "variables": [],
+    "types": []
   }
 }
 ```
@@ -80,7 +83,7 @@ The core functionality is available as a library for integration into other Rust
 ```rust
 use himmel::{analyze_files, to_json};
 
-let result = analyze_files(Some("./binary"), Some("./core.dump"))?;
+let result = analyze_files(Some("./binary"))?;
 let json_output = to_json(&result)?;
 println!("{}", json_output);
 ```
@@ -104,7 +107,7 @@ println!("{}", json_output);
 
 The project includes comprehensive unit tests covering:
 - ELF file analysis with various architectures and file types
-- Coredump parsing and thread information extraction
+- DWARF parsing and debug information extraction
 - Error handling for invalid files and missing files
 - JSON serialization and data structure validation
 - Integration testing with temporary test files
@@ -138,11 +141,10 @@ GitHub Actions CI automatically runs on all pull requests and pushes to main/mas
 
 ## Next Steps (Future Work)
 
-- Add DWARF parsing (backtraces, variable extraction) using gimli
-- Add wasm-bindgen bindings for WebAssembly
-- Improve register parsing (architecture-specific layout)
-- Web UI integration
+- Expand DWARF parsing (enhanced backtraces, more variable types)
+- Improve type system representation
 - Support for more architectures and file formats
+- Enhanced Web UI features
 
 ## License
 
