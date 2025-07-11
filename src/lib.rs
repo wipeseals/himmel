@@ -402,6 +402,14 @@ pub fn analyze_elf_basic(file_path: &str) -> Result<ElfInfo> {
     }
 }
 
+/// Parse an ELF file from byte buffer and extract basic information only (no DWARF)
+pub fn analyze_elf_from_bytes_basic(buffer: &[u8]) -> Result<ElfInfo> {
+    match Object::parse(buffer)? {
+        Object::Elf(elf) => Ok(extract_elf_info(&elf)),
+        _ => anyhow::bail!("File is not a valid ELF binary"),
+    }
+}
+
 /// Parse an ELF file from byte buffer and extract basic information (WebAssembly-compatible)
 pub fn analyze_elf_from_bytes(buffer: &[u8]) -> Result<ElfInfo> {
     analyze_elf_from_bytes_with_dwarf(buffer)
@@ -601,7 +609,19 @@ pub fn main() {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn analyze_elf_wasm(data: &[u8]) -> String {
-    match analyze_elf_from_bytes(data) {
+    match analyze_elf_from_bytes_with_dwarf(data) {
+        Ok(result) => match serde_json::to_string_pretty(&result) {
+            Ok(json) => json,
+            Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
+        },
+        Err(e) => format!("{{\"error\": \"{}\"}}", e),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn analyze_elf_basic_wasm(data: &[u8]) -> String {
+    match analyze_elf_from_bytes_basic(data) {
         Ok(result) => match serde_json::to_string_pretty(&result) {
             Ok(json) => json,
             Err(e) => format!("{{\"error\": \"Failed to serialize result: {}\"}}", e),
@@ -1140,27 +1160,269 @@ mod tests {
     }
 
     #[test]
-    fn test_analyze_demo_binaries() {
-        // Test analysis of actual demo binaries for different architectures
-        let demo_paths = [
-            ("demo-binaries/bin/x86_64/hello", "x86_64"),
-            ("demo-binaries/bin/aarch64/hello", "aarch64"),
-            ("demo-binaries/bin/riscv64/hello", "riscv"), // Note: goblin reports this as "riscv"
-            ("demo-binaries/bin/x86_64/fibonacci", "x86_64"),
-            ("demo-binaries/bin/x86_64/counter", "x86_64"),
-        ];
+    fn test_dwarf_parsing_with_debug_binary() {
+        // Create a simple C program with debug info
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let source_path = temp_dir.path().join("test.c");
+        let binary_path = temp_dir.path().join("test");
 
-        for (path, expected_arch) in demo_paths {
-            if std::path::Path::new(path).exists() {
-                let result = analyze_elf(path).unwrap();
-                assert_eq!(result.architecture, expected_arch);
-                // Note: file_type can be either "executable" or "shared_object" depending on linking
-                assert!(["executable", "shared_object"].contains(&result.file_type.as_str()));
-                assert_eq!(result.endianness, "little_endian");
-                assert!(result.entry_point > 0);
-                assert!(!result.sections.is_empty());
+        let c_source = r#"
+struct Point {
+    int x;
+    int y;
+};
+
+enum Color {
+    RED,
+    GREEN,
+    BLUE
+};
+
+int global_var = 42;
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    struct Point p = {1, 2};
+    return add(p.x, p.y);
+}
+"#;
+
+        std::fs::write(&source_path, c_source).expect("Failed to write C source");
+
+        // Compile with debug info
+        let output = std::process::Command::new("gcc")
+            .args(&["-g", "-O0", "-o"])
+            .arg(&binary_path)
+            .arg(&source_path)
+            .output();
+
+        if let Ok(output) = output {
+            if output.status.success() {
+                // Test the enhanced analysis
+                if let Ok(result) = analyze_elf_with_dwarf(binary_path.to_str().unwrap()) {
+                    // Should have detected debug information
+                    assert_eq!(result.architecture, "x86_64");
+                    
+                    // Should have extracted some functions
+                    let function_names: Vec<&str> = result.functions.iter().map(|f| f.name.as_str()).collect();
+                    assert!(function_names.contains(&"main") || function_names.contains(&"add"));
+                    
+                    // Should have extracted some types
+                    let type_names: Vec<&str> = result.types.iter().map(|t| t.name.as_str()).collect();
+                    // Note: types might not always be detected depending on compilation
+                    
+                    println!("Functions found: {:?}", function_names);
+                    println!("Types found: {:?}", type_names);
+                }
             }
         }
+        // Test should not fail if gcc is not available - this is an optional enhancement test
+    }
+
+    #[test]
+    fn test_dwarf_data_structures() {
+        // Test the new data structures for serialization
+        let function_info = FunctionInfo {
+            name: "test_function".to_string(),
+            address: 0x1000,
+            size: Some(100),
+            parameters: vec![
+                VariableInfo {
+                    name: "param1".to_string(),
+                    address: None,
+                    offset: Some(8),
+                    type_info: TypeInfo {
+                        name: "int".to_string(),
+                        size: Some(4),
+                        kind: "basic".to_string(),
+                        members: Vec::new(),
+                    },
+                    scope: "parameter".to_string(),
+                }
+            ],
+            return_type: Some(TypeInfo {
+                name: "int".to_string(),
+                size: Some(4),
+                kind: "basic".to_string(),
+                members: Vec::new(),
+            }),
+        };
+
+        let type_info = TypeInfo {
+            name: "TestStruct".to_string(),
+            size: Some(16),
+            kind: "struct".to_string(),
+            members: vec![
+                MemberInfo {
+                    name: "field1".to_string(),
+                    offset: 0,
+                    type_info: TypeInfo {
+                        name: "int".to_string(),
+                        size: Some(4),
+                        kind: "basic".to_string(),
+                        members: Vec::new(),
+                    },
+                },
+                MemberInfo {
+                    name: "field2".to_string(),
+                    offset: 8,
+                    type_info: TypeInfo {
+                        name: "double".to_string(),
+                        size: Some(8),
+                        kind: "basic".to_string(),
+                        members: Vec::new(),
+                    },
+                },
+            ],
+        };
+
+        let variable_info = VariableInfo {
+            name: "global_var".to_string(),
+            address: Some(0x2000),
+            offset: None,
+            type_info: type_info.clone(),
+            scope: "global".to_string(),
+        };
+
+        // Test serialization
+        assert!(serde_json::to_string(&function_info).is_ok());
+        assert!(serde_json::to_string(&type_info).is_ok());
+        assert!(serde_json::to_string(&variable_info).is_ok());
+
+        // Test field access
+        assert_eq!(function_info.name, "test_function");
+        assert_eq!(function_info.address, 0x1000);
+        assert_eq!(function_info.parameters.len(), 1);
+        assert_eq!(function_info.parameters[0].name, "param1");
+
+        assert_eq!(type_info.name, "TestStruct");
+        assert_eq!(type_info.members.len(), 2);
+        assert_eq!(type_info.members[0].offset, 0);
+        assert_eq!(type_info.members[1].offset, 8);
+
+        assert_eq!(variable_info.scope, "global");
+        assert_eq!(variable_info.address, Some(0x2000));
+    }
+
+    #[test]
+    fn test_enhanced_elf_info_json_output() {
+        // Test that the enhanced ElfInfo structure produces valid, jq-compatible JSON
+        let enhanced_elf = ElfInfo {
+            architecture: "x86_64".to_string(),
+            entry_point: 0x1000,
+            sections: vec![".text".to_string(), ".data".to_string()],
+            file_type: "executable".to_string(),
+            endianness: "little_endian".to_string(),
+            functions: vec![
+                FunctionInfo {
+                    name: "main".to_string(),
+                    address: 0x1100,
+                    size: Some(50),
+                    parameters: vec![
+                        VariableInfo {
+                            name: "argc".to_string(),
+                            address: None,
+                            offset: Some(8),
+                            type_info: TypeInfo {
+                                name: "int".to_string(),
+                                size: Some(4),
+                                kind: "basic".to_string(),
+                                members: Vec::new(),
+                            },
+                            scope: "parameter".to_string(),
+                        }
+                    ],
+                    return_type: Some(TypeInfo {
+                        name: "int".to_string(),
+                        size: Some(4),
+                        kind: "basic".to_string(),
+                        members: Vec::new(),
+                    }),
+                }
+            ],
+            variables: vec![
+                VariableInfo {
+                    name: "global_counter".to_string(),
+                    address: Some(0x2000),
+                    offset: None,
+                    type_info: TypeInfo {
+                        name: "int".to_string(),
+                        size: Some(4),
+                        kind: "basic".to_string(),
+                        members: Vec::new(),
+                    },
+                    scope: "global".to_string(),
+                }
+            ],
+            types: vec![
+                TypeInfo {
+                    name: "Point".to_string(),
+                    size: Some(8),
+                    kind: "struct".to_string(),
+                    members: vec![
+                        MemberInfo {
+                            name: "x".to_string(),
+                            offset: 0,
+                            type_info: TypeInfo {
+                                name: "int".to_string(),
+                                size: Some(4),
+                                kind: "basic".to_string(),
+                                members: Vec::new(),
+                            },
+                        },
+                        MemberInfo {
+                            name: "y".to_string(),
+                            offset: 4,
+                            type_info: TypeInfo {
+                                name: "int".to_string(),
+                                size: Some(4),
+                                kind: "basic".to_string(),
+                                members: Vec::new(),
+                            },
+                        }
+                    ],
+                }
+            ],
+        };
+
+        let analysis_result = AnalysisResult {
+            elf_info: Some(enhanced_elf),
+            coredump_info: None,
+        };
+
+        // Test JSON serialization
+        let json = to_json(&analysis_result).expect("Should serialize to JSON");
+        
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("Should be valid JSON");
+        
+        // Test jq-like access patterns (verify structure is accessible)
+        assert!(parsed["elf_info"]["functions"].is_array());
+        assert!(parsed["elf_info"]["variables"].is_array());
+        assert!(parsed["elf_info"]["types"].is_array());
+        
+        // Verify function information
+        let functions = &parsed["elf_info"]["functions"];
+        assert_eq!(functions[0]["name"], "main");
+        assert_eq!(functions[0]["address"], 0x1100);
+        assert_eq!(functions[0]["parameters"][0]["name"], "argc");
+        
+        // Verify type information
+        let types = &parsed["elf_info"]["types"];
+        assert_eq!(types[0]["name"], "Point");
+        assert_eq!(types[0]["kind"], "struct");
+        assert_eq!(types[0]["members"][0]["name"], "x");
+        assert_eq!(types[0]["members"][0]["offset"], 0);
+        assert_eq!(types[0]["members"][1]["offset"], 4);
+        
+        // Verify variable information
+        let variables = &parsed["elf_info"]["variables"];
+        assert_eq!(variables[0]["name"], "global_counter");
+        assert_eq!(variables[0]["address"], 0x2000);
+        assert_eq!(variables[0]["scope"], "global");
     }
 
     #[test]

@@ -46,11 +46,22 @@
             <p class="text-gray-600 mb-4">
                 Himmel is a WebAssembly-powered tool for analyzing ELF binaries and Linux coredump files. 
                 It extracts architecture information, entry points, sections, and thread data directly in your browser.
+                <strong>Enhanced with DWARF parsing</strong> to extract detailed function signatures, variable information, and complete type definitions.
             </p>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 class="text-sm font-semibold text-blue-900 mb-2">🆕 Enhanced DWARF Analysis Features</h3>
+                <ul class="text-sm text-blue-800 space-y-1">
+                    <li>• <strong>Functions:</strong> Extract function names, addresses, parameters, and return types</li>
+                    <li>• <strong>Variables:</strong> Global and local variable information with addresses and type details</li>
+                    <li>• <strong>Types:</strong> Complete struct, enum, and union definitions with member layouts</li>
+                    <li>• <strong>User-friendly output:</strong> Structured JSON perfect for jq filtering and analysis</li>
+                </ul>
+            </div>
             <div class="flex flex-wrap gap-2">
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">WebAssembly</span>
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">ELF Analysis</span>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">Coredump</span>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">DWARF Parsing</span>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">Coredump</span>
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Offline</span>
             </div>
         </div>
