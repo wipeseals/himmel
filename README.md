@@ -16,7 +16,7 @@ This tool analyzes ELF binaries, extracting basic ELF information and detailed d
 - **Structure is future-proof** for additional DWARF parsing features
 - **No external dependencies** - uses goblin for ELF parsing, serde for JSON output
 - **Demo binaries**: Pre-compiled sample programs for testing (C, Rust) in multiple architectures (x86_64, aarch64, riscv64)
-- **Web interface**: Select from demo binaries or upload your own files for analysis
+- **Modern TypeScript Web interface**: Upload files or select demo binaries for analysis with a professional UI built with modern web technologies
 
 ## Installation
 
@@ -92,7 +92,41 @@ println!("{}", json_output);
 
 - **`src/lib.rs`**: Core analysis logic, WebAssembly-ready
 - **`src/main.rs`**: CLI interface using clap for argument parsing
-- **Future-proof structure**: Ready for DWARF parsing and WebAssembly bindings
+- **`web-src/`**: Modern TypeScript web application source code
+- **`docs/`**: Built web application for GitHub Pages deployment
+
+## Web Interface Development
+
+The web interface is built using modern TypeScript and Vite for fast development and optimized builds.
+
+### Development Setup
+
+```bash
+# Install web dependencies
+cd web-src
+npm install
+
+# Start development server
+npm run dev
+```
+
+### Building for Production
+
+```bash
+# Build the web application
+cd web-src
+npm run build
+```
+
+The built application will be output to the `docs/` directory, ready for GitHub Pages deployment.
+
+### Web Development Workflow
+
+1. **Source Code**: All TypeScript source code is in `web-src/src/`
+2. **Build System**: Uses Vite for fast builds and hot reloading during development
+3. **TypeScript**: Fully typed codebase with strict TypeScript configuration
+4. **Modular Architecture**: Component-based structure for maintainable code
+5. **WASM Integration**: Proper TypeScript bindings for WebAssembly functions
 
 ## Dependencies
 
@@ -100,6 +134,8 @@ println!("{}", json_output);
 - `serde` + `serde_json`: JSON serialization
 - `clap`: CLI argument parsing  
 - `anyhow`: Error handling
+- `wasm-bindgen`: WebAssembly bindings
+- `gimli`: DWARF debugging format parser
 
 ## Development
 
@@ -131,6 +167,17 @@ cargo clippy --all-targets --all-features
 cargo fmt
 ```
 
+For the web interface:
+```bash
+cd web-src
+
+# Type checking
+npm run type-check
+
+# Linting
+npm run lint
+```
+
 ### Continuous Integration
 
 GitHub Actions CI automatically runs on all pull requests and pushes to main/master:
@@ -138,13 +185,14 @@ GitHub Actions CI automatically runs on all pull requests and pushes to main/mas
 - Clippy linting with zero warnings policy
 - Full test suite execution
 - Debug and release build verification
+- Web application build and deployment to GitHub Pages
 
 ## Next Steps (Future Work)
 
 - Expand DWARF parsing (enhanced backtraces, more variable types)
 - Improve type system representation
 - Support for more architectures and file formats
-- Enhanced Web UI features
+- Enhanced Web UI features and better mobile support
 
 ## License
 
