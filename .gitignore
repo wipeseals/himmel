@@ -22,3 +22,7 @@ target
 
 # WebAssembly build artifacts
 pkg/
+
+# Web UI build artifacts (Vite generates these in docs/)
+docs/assets/
+*.backup
