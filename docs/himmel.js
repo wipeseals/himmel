@@ -131,47 +131,25 @@ export function analyze_elf_basic_wasm(data) {
     }
 }
 
-/**
- * @param {Uint8Array} data
- * @returns {string}
- */
-export function analyze_coredump_wasm(data) {
-    let deferred2_0;
-    let deferred2_1;
-    try {
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.analyze_coredump_wasm(ptr0, len0);
-        deferred2_0 = ret[0];
-        deferred2_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-    }
-}
-
 function isLikeNone(x) {
     return x === undefined || x === null;
 }
 /**
  * @param {Uint8Array | null} [elf_data]
- * @param {Uint8Array | null} [core_data]
  * @returns {string}
  */
-export function analyze_files_wasm(elf_data, core_data) {
-    let deferred3_0;
-    let deferred3_1;
+export function analyze_files_wasm(elf_data) {
+    let deferred2_0;
+    let deferred2_1;
     try {
         var ptr0 = isLikeNone(elf_data) ? 0 : passArray8ToWasm0(elf_data, wasm.__wbindgen_malloc);
         var len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(core_data) ? 0 : passArray8ToWasm0(core_data, wasm.__wbindgen_malloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.analyze_files_wasm(ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
+        const ret = wasm.analyze_files_wasm(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
 
