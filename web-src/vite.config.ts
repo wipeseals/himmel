@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
   root: './src',
@@ -7,9 +8,7 @@ export default defineConfig({
     outDir: '../../docs',
     emptyOutDir: false, // Don't delete WASM files
     rollupOptions: {
-      input: {
-        main: './src/index.html'
-      },
+      input: resolve(__dirname, 'src/index.html'),
       external: ['/himmel.js']
     }
   },
